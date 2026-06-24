@@ -2,7 +2,8 @@
 name: bettafish-opinion-analysis
 kind: meta
 description: |
-  BettaFish（微舆）多智能体舆情分析 MetaSKILL — 编排模板分类→三引擎并行分析→双格式报告生成的完整 DAG 工作流。
+  BettaFish（微舆）多智能体舆情分析 MetaSKILL — 编排模板分类→三引擎角色扮演分析→三格式报告生成的完整 DAG 工作流。
+  运行于 OpenClaw.net AgentRuntime，通过 meta_invoke 触发。
 
   当用户需要以下分析时触发此 skill：
   - 分析某品牌/企业/产品的社交媒体声誉和口碑
@@ -18,18 +19,27 @@ description: |
   此 MetaSKILL 编排 7 步 DAG：
   1. llm_classify → 智能匹配 6 种报告模板
   2. llm_chat → 提取分析要素并优化搜索关键词
-  3. agent(bettafish-engine) → 三引擎并行搜索 + ForumEngine 3 轮反思
+  3. agent(bettafish-engine) → 三引擎角色扮演 + 3 轮反思（通过 web_search/web_fetch/browser/shell）
   4. agent → 知识图谱构建
   5-7. agent(docx/pdf/frontend-design) → 并行生成三种格式报告
 
-  **不使用任何数据库和模拟数据**，所有数据通过 WebSearch/WebFetch/Browser/Curl 实时获取。
+  **不使用任何数据库和模拟数据**，所有数据通过 OpenClaw 原生工具实时获取。
 
 compatibility: |
-  - 需要网络搜索能力（WebSearch/WebFetch/Browser/Curl）
-  - 支持主流社交媒体平台：微博、小红书、抖音、B站、知乎等
-  - 输出格式：Word文档(.docx) + PDF(.pdf) + HTML交互报告(.html)
-  - 无数据库依赖，纯前端可视化（ECharts/D3.js）
-  - 视频分析依赖 video-frames subskill
+  运行环境: OpenClaw.net AgentRuntime
+  必需工具:
+    - web_search (Tavily/Brave/SearXNG)
+    - web_fetch (HTTP 页面抓取)
+    - browser (Playwright)
+    - shell (curl + Python 脚本)
+  子 Skill 依赖:
+    - bettafish-engine (subskills/bettafish-engine/)
+    - docx (subskills/docx/)
+    - pdf (subskills/pdf/)
+    - frontend-design (subskills/frontend-design/)
+    - video-frames (subskills/video-frames/)
+  输出格式: .docx + .pdf + .html
+  无数据库依赖，纯前端可视化（ECharts/D3.js）
 triggers:
   - 舆情分析
   - 品牌声誉
@@ -218,9 +228,9 @@ composition:
 
 # BettaFish 舆情分析系统（MetaSKILL）
 
-BettaFish（微舆）是一个**无数据库依赖、无模拟数据**的多智能体舆情分析系统。
+BettaFish（微舆）是一个**无数据库依赖、无模拟数据**的舆情分析系统，运行于 **OpenClaw.net AgentRuntime**。
 
-本 MetaSKILL 编排 **7 步 DAG**：模板分类 → 要素提取 → 三引擎并行分析 → 知识图谱 → 三格式报告并行生成。
+本 MetaSKILL 编排 **7 步 DAG**：模板分类 → 要素提取 → 三引擎角色扮演分析 → 知识图谱 → 三格式报告并行生成。
 
 ```mermaid
 flowchart TD
@@ -238,7 +248,7 @@ flowchart TD
     GRAPH --> HTML
 ```
 
-> **架构说明**：核心的 QueryAgent + MediaAgent + InsightAgent 三引擎并行搜索、ForumEngine 协作讨论、3 轮反思循环封装在 `bettafish-engine` 子 Skill 内部，由 MetaSKILL 作为单一 `agent` 步骤调用。这避免了在 MetaSKILL DAG 中展开循环导致步骤数爆炸。
+> **架构说明**：核心的 QueryAgent + MediaAgent + InsightAgent 三引擎角色扮演、ForumHost 协作讨论、3 轮反思循环封装在 `bettafish-engine` 子 Skill 内部，由 MetaSKILL 作为单一 `agent` 步骤调用。在 OpenClaw 单 Agent 运行时中，三个角色由 Agent 依次扮演。这避免了在 MetaSKILL DAG 中展开循环导致步骤数爆炸。
 
 ## 输出产物说明
 
@@ -339,11 +349,11 @@ HTML 报告采用 **Editorial/Magazine（编辑杂志）风格**：
 |---------|------|------|------|---------|
 | `classify_template` | `llm_classify` | 无 | 智能匹配 6 种报告模板 | 默认 `brand_reputation` |
 | `extract_entities` | `llm_chat` | 无 | 提取分析主体、时间范围、搜索关键词 | 重新生成 |
-| `run_engine` | `agent` | classify_template, extract_entities | 调用 bettafish-engine 执行 3 轮分析 | **阻断**（核心步骤） |
-| `build_graph` | `agent` | run_engine | 构建 D3.js 知识图谱 | 继续（可选步骤） |
-| `report_docx` | `agent` | run_engine, build_graph | 生成 Word 文档 | 继续（降级） |
-| `report_pdf` | `agent` | run_engine, build_graph | 生成 PDF 文档 | 继续（降级） |
-| `report_html` | `agent` | run_engine, build_graph | 生成 HTML 交互报告 | 继续（降级） |
+| `run_engine` | `agent` | classify_template, extract_entities | 调用 bettafish-engine（web_search/web_fetch/browser/shell）执行 3 轮分析 | **阻断**（核心步骤） |
+| `build_graph` | `agent` | run_engine | 构建 D3.js 知识图谱（shell: graph_generator.py） | 继续（可选步骤） |
+| `report_docx` | `agent` | run_engine, build_graph | 生成 Word 文档（subskills/docx） | 继续（降级） |
+| `report_pdf` | `agent` | run_engine, build_graph | 生成 PDF 文档（subskills/pdf） | 继续（降级） |
+| `report_html` | `agent` | run_engine, build_graph | 生成 HTML 交互报告（subskills/frontend-design） | 继续（降级） |
 
 ---
 
@@ -351,10 +361,10 @@ HTML 报告采用 **Editorial/Magazine（编辑杂志）风格**：
 
 - [ ] `classify_template` 正确匹配模板类型
 - [ ] `extract_entities` 生成针对性的搜索关键词
-- [ ] `run_engine` 三 Agent 并行执行完成
-- [ ] ForumEngine 完成 3 轮讨论
-- [ ] 所有数据来自真实 WebSearch，无模拟数据
-- [ ] 视频分析使用 video-frames 提取帧
+- [ ] `run_engine` 三个角色（QueryAgent/MediaAgent/InsightAgent）每轮均通过 web_search/web_fetch/browser/shell 执行
+- [ ] ForumHost 完成 3 轮引导总结
+- [ ] 所有数据来自 OpenClaw 工具真实请求，无模拟数据
+- [ ] 视频分析使用 video-frames skill 提取真实帧
 - [ ] 搜索结果经过聚类采样处理
 - [ ] 同时生成 Word、PDF、HTML 三种格式
 - [ ] 每个章节包含 3-5 段详细分析文字
@@ -365,16 +375,22 @@ HTML 报告采用 **Editorial/Magazine（编辑杂志）风格**：
 
 ## Subskills 依赖
 
-| Subskill | 用途 | 调用方式 |
-|----------|------|---------|
-| `bettafish-engine` | 核心舆情分析引擎 | `agent` 步骤内部调用 |
-| `docx` | Word 文档生成 | `agent` 步骤（docx-js） |
-| `pdf` | PDF 文档生成 | `agent` 步骤（reportlab） |
-| `frontend-design` | HTML 交互报告 | `agent` 步骤（编辑杂志风格） |
-| `video-frames` | 视频关键帧提取 | bettafish-engine 内部调用 |
+| Subskill | 路径 | 用途 | 调用方式 |
+|----------|------|------|---------|
+| `bettafish-engine` | `subskills/bettafish-engine/` | 核心舆情分析引擎（web_search/web_fetch/browser/shell） | `agent` 步骤内部调用 |
+| `docx` | `subskills/docx/` | Word 文档生成 | `agent` 步骤（docx-js） |
+| `pdf` | `subskills/pdf/` | PDF 文档生成 | `agent` 步骤（reportlab） |
+| `frontend-design` | `subskills/frontend-design/` | HTML 交互报告 | `agent` 步骤（编辑杂志风格） |
+| `video-frames` | `subskills/video-frames/` | 视频关键帧提取 | bettafish-engine 内部 `load_skill` 调用 |
 
 ## 版本历史
 
+- **v2.1.0** — OpenClaw.net 适配
+  - 工具映射：WebSearch→`web_search`, WebFetch→`web_fetch`, Browser→`browser`, Curl→`shell`
+  - 多 Agent 并行架构改为单 Agent 角色扮演模型（适配 OpenClaw AgentRuntime）
+  - ForumEngine 改为 ForumHost 角色内模拟
+  - 子 Skill 路径规范化（`subskills/` 前缀）
+  - Python 脚本调用改为 `shell` 工具 + `read_skill_resource` 渐进式加载
 - **v2.0.0** — MetaSKILL 重构
   - `kind: meta` DAG 编排：7 步工作流（classify → extract → engine → graph → 3×report）
   - 核心分析引擎抽取为 `bettafish-engine` 子 Skill
